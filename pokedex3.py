@@ -1,10 +1,10 @@
 import tkinter as tk
-from tkinter import ttk  # Import the themed tkinter
+from tkinter import ttk
 from PIL import Image, ImageTk
 import requests
 import json
 import threading
-from tkinter import messagebox  # For point 11
+from tkinter import messagebox
 
 class PokemonPicker:
     def __init__(self, root):
@@ -295,40 +295,13 @@ class PokemonPicker:
             stats = {stat_info['stat']['name']: stat_info['base_stat'] for stat_info in pokemon_data['stats']}
 
             # Format the details for display
-            details = f"Name: {pokemon_name.capitalize()}\nTypes: {', '.join(types)}\n"
+            details = f"{pokemon_name.capitalize()}\nTypes: {', '.join(types)}\n"
 
             return details, stats
         except requests.exceptions.RequestException as e:
             print(f"Error fetching details for {pokemon_name}: {e}")
             return "Failed to fetch details.", {}
-
-        
-    def display_stat_bars(self, stats):
-        # Define a maximum value for stats to normalize the bar length
-        max_stat_value = 150
-
-        for stat, value in stats.items():
-            # Create a frame for each stat
-            stat_frame = tk.Frame(self.details_frame)
-            stat_frame.pack(fill=tk.X, padx=5, pady=2)
-
-            # Create a label with the stat name
-            tk.Label(stat_frame, text=f"{stat.capitalize()}:").pack(side=tk.LEFT)
-
-            # Create a canvas for the bar
-            canvas = tk.Canvas(stat_frame, width=100, height=10)
-            canvas.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-            # Normalize the stat value to the canvas width
-            bar_length = (value / max_stat_value) * (canvas.winfo_reqwidth())
-
-            # Choose a color for the bar based on the stat type
-            bar_color = self.get_stat_color(stat)
-
-            # Draw the bar
-            canvas.create_rectangle(10, 2, bar_length, 12, fill=bar_color, outline=bar_color)
-
-
+    
     def get_stat_color(self, stat):
         # Return a color based on the stat name
         colors = {
@@ -340,16 +313,80 @@ class PokemonPicker:
             'speed': 'cyan'
         }
         return colors.get(stat.lower(), 'grey')
+        # Display the stat bars
+        self.display_stat_bars(stats)
+        
+
 
     def display_pokemon_details(self, details, stats):
-        # Make sure the text widget is in the normal state before inserting text
-        self.details_text.config(state=tk.NORMAL)
-        self.details_text.delete('1.0', tk.END)
-        self.details_text.insert(tk.END, details)
-        self.details_text.config(state=tk.DISABLED)
+        # Clear the frame of previous details and bars
+        for widget in self.details_frame.winfo_children():
+            widget.destroy()
 
-        # Display stat bars for each stat
+        # Display the text details (name, types, etc.)
+        details_text = tk.Text(self.details_frame, wrap=tk.WORD, height=4, bg=self.root.cget('bg'))
+        details_text.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
+        details_text.insert(tk.END, details)
+        details_text.config(state=tk.DISABLED)  # Make the text widget read-only
+
+        # Display the stat bars
         self.display_stat_bars(stats)
+
+    def display_stat_bars(self, stats):
+        # Clear out any existing widgets in the details_frame
+        for widget in self.details_frame.winfo_children():
+            if isinstance(widget, tk.Canvas) or isinstance(widget, tk.Label):
+                widget.destroy()
+
+        # Define abbreviations for stat names
+        stat_abbreviations = {
+            'hp': 'HP',
+            'attack': 'ATK',
+            'defense': 'DEF',
+            'special-attack': 'SpATK',
+            'special-defense': 'SpDEF',
+            'speed': 'SPE'
+        }
+
+        # Calculate the total of all stats (BST)
+        bst = sum(stats.values())
+
+        # Define a maximum value for stats to normalize the bar length
+        max_stat_value = max(stats.values(), default=100)
+
+        for stat, value in stats.items():
+            # Create a frame for each stat
+            stat_frame = tk.Frame(self.details_frame)
+            stat_frame.pack(fill=tk.X, padx=5, pady=2)
+
+            # Use abbreviation for the stat name
+            abbrev = stat_abbreviations.get(stat, stat).capitalize()
+
+            # Create a label with the stat abbreviation
+            tk.Label(stat_frame, text=abbrev, width=6, anchor='w').pack(side=tk.LEFT)
+
+            # Create a label for the stat value
+            value_label = tk.Label(stat_frame, text=f"{value}", width=4, anchor='e')
+            value_label.pack(side=tk.RIGHT)
+
+            # Create a canvas for the bar
+            canvas = tk.Canvas(stat_frame, height=10, bg="white")
+            canvas.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            canvas.update_idletasks()  # Refresh the UI to get updated dimensions
+
+            # Draw the bar on the canvas
+            bar_length = (value / max_stat_value) * canvas.winfo_width()
+            canvas.create_rectangle(0, 0, bar_length, 10, fill=self.get_stat_color(stat), outline="")
+
+        # Display the Base Stat Total
+        bst_frame = tk.Frame(self.details_frame)
+        bst_frame.pack(fill=tk.X, padx=5, pady=5)
+        tk.Label(bst_frame, text="Total", width=6, anchor='w').pack(side=tk.LEFT)
+        tk.Label(bst_frame, text=f"{bst}", anchor='e').pack(side=tk.RIGHT)
+
+
+
+
 
 if __name__ == "__main__":
     root = tk.Tk()
