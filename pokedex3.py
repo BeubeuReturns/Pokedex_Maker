@@ -20,16 +20,43 @@ class PokemonPicker:
         self.create_widgets()
         self.style_widgets()
 
+
+    def load_data_from_cache(self, filename='pokemon_data_sorted.json'):
+        try:
+            with open(filename, 'r') as file:
+                return json.load(file)
+        except FileNotFoundError:
+            print("Cache file not found, fetching data from API.")
+        except Exception as e:
+            print(f"Error reading cache file: {e}")
+        return None
+
     def fetch_pokemon_data(self):
+        # Try to load from cache first
+        cached_data = self.load_data_from_cache()
+        if cached_data is not None:
+            return cached_data
+
+        # If cache is not available, fetch from API
         api_url = "https://pokeapi.co/api/v2/pokemon?limit=1024"
         try:
             response = requests.get(api_url)
             response.raise_for_status()
-            data = response.json()
-            return data["results"]
+            data = response.json()["results"]
+            # Optionally, save this data to cache
+            self.save_data_to_cache(data)
+            return data
         except requests.exceptions.RequestException as e:
             print(f"Error fetching Pokémon data: {e}")
             return []
+
+    def save_data_to_cache(self, data, filename='pokemon_cache.json'):
+        try:
+            with open(filename, 'w') as file:
+                json.dump(data, file)
+        except Exception as e:
+            print(f"Error saving data to cache: {e}")
+
 
     def fetch_pokemon_types(self, pokemon_name):
         api_url = f"https://pokeapi.co/api/v2/pokemon/{pokemon_name.lower()}"
@@ -276,31 +303,27 @@ class PokemonPicker:
 
 
     def fetch_pokemon_details(self, pokemon_name):
-        api_url = f"https://pokeapi.co/api/v2/pokemon/{pokemon_name.lower()}"
-        try:
-            response = requests.get(api_url)
-            response.raise_for_status()  # Check for HTTP errors
+        # Search for the Pokémon in the cached data
+        for pokemon in self.pokemon_data:
+            if pokemon['name'].lower() == pokemon_name.lower():
+                types = ', '.join(pokemon.get('types', []))
 
-            # Parse the JSON response
-            pokemon_data = response.json()
+                # Formatting abilities
+                normal_abilities = ', '.join(pokemon.get('normal_abilities', []))
+                hidden_abilities = ', '.join([ability + ' (Hidden)' for ability in pokemon.get('hidden_abilities', [])])
+                abilities = normal_abilities
+                if hidden_abilities:
+                    abilities += '\n' + hidden_abilities
 
-            # Extract types
-            types = [type_info['type']['name'] for type_info in pokemon_data['types']]
+                # Preparing stats
+                stats = pokemon.get('stats', {})
 
-            # Extract abilities
-            abilities = [abilities_info['ability']['name'] for abilities_info in pokemon_data['abilities']]
-            print(f"abilities of {pokemon_name.capitalize()} : {abilities}")
+                # Format the details for display
+                details = f"{pokemon_name.capitalize()}\nTypes: {types}\nAbilities: {abilities}\n"
+                return details, stats
 
-            # Extract stats
-            stats = {stat_info['stat']['name']: stat_info['base_stat'] for stat_info in pokemon_data['stats']}
+        return "Details not found.", {}
 
-            # Format the details for display
-            details = f"{pokemon_name.capitalize()}\nTypes: {', '.join(types)}\n"
-
-            return details, stats
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching details for {pokemon_name}: {e}")
-            return "Failed to fetch details.", {}
     
     def get_stat_color(self, stat):
         # Return a color based on the stat name
@@ -324,13 +347,14 @@ class PokemonPicker:
             widget.destroy()
 
         # Display the text details (name, types, etc.)
-        details_text = tk.Text(self.details_frame, wrap=tk.WORD, height=4, bg=self.root.cget('bg'))
+        details_text = tk.Text(self.details_frame, wrap=tk.WORD, height=15, bg=self.root.cget('bg'))
         details_text.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
         details_text.insert(tk.END, details)
         details_text.config(state=tk.DISABLED)  # Make the text widget read-only
 
         # Display the stat bars
         self.display_stat_bars(stats)
+
 
     def display_stat_bars(self, stats):
         # Clear out any existing widgets in the details_frame
