@@ -376,7 +376,7 @@ class PokemonPicker:
         bst = sum(stats.values())
 
         # Define a maximum value for stats to normalize the bar length
-        max_stat_value = max(stats.values(), default=100)
+        max_stat_value = 150
 
         for stat, value in stats.items():
             # Create a frame for each stat
