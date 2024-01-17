@@ -144,7 +144,7 @@ class PokemonPicker:
         )
 
         if index is not None:
-            image_path = f"images/{index + 1}.png"
+            image_path = f"data/images/pokemons/{index + 1}.png"
 
             try:
                 img = Image.open(image_path)
@@ -257,7 +257,7 @@ class PokemonPicker:
         )
 
         for i, pokemon in enumerate(self.pokemon_data):
-            image_path = f"images/{i + 1}.png"
+            image_path = f"data/images/pokemons/{i + 1}.png"
             try:
                 img = Image.open(image_path)
                 img = img.resize((96, 96), Image.LANCZOS)
@@ -465,8 +465,6 @@ class PokemonPicker:
         # Set up font styles
         title_font = ("Arial", 14, "bold")
         content_font = ("Arial", 10)
-        section_title_font = ("Arial", 12, "bold")
-        types_font = ("Arial", 10, "italic")
 
         # Display the text details (name, types, etc.)
         details_text = tk.Text(self.details_frame, wrap=tk.WORD, bg=self.root.cget('bg'))
@@ -476,24 +474,35 @@ class PokemonPicker:
         details_text.tag_configure("name", font=title_font)
         details_text.insert(tk.END, details.split('\n')[0] + '\n', "name")
 
-        # Insert types
-        details_text.tag_configure("types", font=types_font, foreground="blue")
-        details_text.insert(tk.END, details.split('\n')[1] + '\n\n', "types")
+        # Display the type icons
+        types_frame = tk.Frame(self.details_frame)
+        types_frame.pack(pady=5)
 
-        # Insert abilities with section title
-        details_text.tag_configure("section_title", font=section_title_font, foreground="black")
-        details_text.insert(tk.END, "Abilities:\n", "section_title")
+        pokemon_types = details.split('\n')[1].replace("Types: ", "").split(", ")
+        for type_name in pokemon_types:
+            type_img_path = f"data/images/types/{type_name.capitalize()}.png"
+            try:
+                type_img = Image.open(type_img_path)
+                type_img = type_img.resize((80, 20), Image.LANCZOS)  # Adjust the size as needed
+                type_photo = ImageTk.PhotoImage(type_img)
+                type_label = tk.Label(types_frame, image=type_photo)
+                type_label.image = type_photo  # Keep a reference
+                type_label.pack(side=tk.LEFT, padx=2)
+            except FileNotFoundError:
+                print(f"Type icon not found: {type_img_path}")
 
-        # Insert abilities content
-        details_text.tag_configure("content", font=content_font)
+        # Re-enable text widget, insert abilities info, and disable it again
+        details_text.config(state=tk.NORMAL)
         abilities_info = details.split('\n')[2:]
         for info in abilities_info:
             details_text.insert(tk.END, info + '\n', "content")
-
         details_text.config(state=tk.DISABLED)  # Make the text widget read-only
 
         # Display the stat bars
         self.display_stat_bars(stats)
+
+
+
 
 
     def display_pokemon_info_on_hover(self, pokemon_name):
