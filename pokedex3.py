@@ -306,14 +306,18 @@ class PokemonPicker:
 
     def load_final_evolutions(self):
         try:
-            with open("final_evolutions.json", "r") as file:
-                return json.load(file)
+            with open("data/evolution_chains.json", "r") as file:
+                evolution_chains = json.load(file)
+            # Extract the last Pokémon in each evolution chain as the final evolution
+            final_evolutions = {chain_id: pokemons[-1] for chain_id, pokemons in evolution_chains.items()}
+            return final_evolutions
         except FileNotFoundError:
-            print("Final evolutions file not found.")
+            print("Evolution chains file not found.")
             return {}
         except Exception as e:
-            print(f"Error reading final evolutions file: {e}")
+            print(f"Error reading evolution chains file: {e}")
             return {}
+
 
     def toggle_view(self):
         # Toggle between full list and picked Pokémon only views
