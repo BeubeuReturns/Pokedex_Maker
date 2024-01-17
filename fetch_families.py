@@ -35,7 +35,7 @@ def fetch_all_evolution_chains():
             if evolution_chain:
                 all_chains[chain_id] = evolution_chain
 
-    with open('evolution_chains.json', 'w') as f:
+    with open('data/evolution_chains.json', 'w') as f:
         json.dump(all_chains, f, indent=4)
 
     print("Fetched all evolution chains.")

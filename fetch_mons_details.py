@@ -42,7 +42,7 @@ def main():
     sorted_pokemon_list = [pokemon_data_dict[id] for id in sorted(pokemon_data_dict)]
 
     # Save the data to a JSON file
-    with open('pokemon_data_sorted.json', 'w') as file:
+    with open('data/pokemon_data_sorted.json', 'w') as file:
         json.dump(sorted_pokemon_list, file)
 
     print("Data fetching complete and saved to pokemon_data_sorted.json")

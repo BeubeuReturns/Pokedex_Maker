@@ -1,11 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk
-import requests
 import json
-import threading
-from tkinter import messagebox
-
 
 class PokemonPicker:
     def __init__(self, root):
@@ -14,65 +10,31 @@ class PokemonPicker:
         self.root.title("Regional Pokédex Maker")
         root.bind("<MouseWheel>", self.on_mousewheel)
 
-        # Load data and set up initial state
-        self.pokemon_data = self.fetch_pokemon_data()
+        # Load data from JSON files
+        self.pokemon_data = self.load_json_data("data/pokemon_data_sorted.json")
+        self.ability_flavor_texts = self.load_json_data("data/abilities_flavor_text.json")
+        self.evolution_chains = self.load_json_data("data/evolution_chains.json")
+
+        # Set up initial state
         self.show_full_list = True
         self.selected_pokemons = []
         self.selected_pokemon = tk.StringVar()
         self.show_final_evolutions_only = False
-        self.ability_flavor_texts = self.load_ability_flavor_texts()
         self.final_evolution_filter_query = ""
 
         # Create and style the widgets
         self.create_widgets()
         self.style_widgets()
 
-    def load_data_from_cache(self, filename="data/pokemon_data_sorted.json"):
+    def load_json_data(self, filename):
         try:
             with open(filename, "r") as file:
                 return json.load(file)
         except FileNotFoundError:
-            print("Cache file not found, fetching data from API.")
-        except Exception as e:
-            print(f"Error reading cache file: {e}")
-        return None
-
-    def fetch_pokemon_data(self):
-        # Try to load from cache first
-        cached_data = self.load_data_from_cache()
-        if cached_data is not None:
-            return cached_data
-
-        # If cache is not available, fetch from API
-        api_url = "https://pokeapi.co/api/v2/pokemon?limit=1024"
-        try:
-            response = requests.get(api_url)
-            response.raise_for_status()
-            data = response.json()["results"]
-            # Optionally, save this data to cache
-            self.save_data_to_cache(data)
-            return data
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching Pokémon data: {e}")
+            print(f"File not found: {filename}")
             return []
-
-    def save_data_to_cache(self, data, filename="pokemon_cache.json"):
-        try:
-            with open(filename, "w") as file:
-                json.dump(data, file)
         except Exception as e:
-            print(f"Error saving data to cache: {e}")
-
-    def fetch_pokemon_types(self, pokemon_name):
-        api_url = f"https://pokeapi.co/api/v2/pokemon/{pokemon_name.lower()}"
-        try:
-            response = requests.get(api_url)
-            response.raise_for_status()
-            data = response.json()
-            types = [type_data["type"]["name"] for type_data in data["types"]]
-            return types
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching types for {pokemon_name}: {e}")
+            print(f"Error reading file {filename}: {e}")
             return []
 
     def generate_json(self):
@@ -88,8 +50,13 @@ class PokemonPicker:
     def generate_plain_list(self):
         plain_list = []
         for pokemon_name in self.selected_pokemons:
-            pokemon_types = self.fetch_pokemon_types(pokemon_name)
-            plain_list.append(f"{pokemon_name} - Types: {', '.join(pokemon_types)}")
+            # Find the Pokémon data in the loaded JSON data
+            pokemon_data = next((pokemon for pokemon in self.pokemon_data if pokemon['name'] == pokemon_name), None)
+            if pokemon_data:
+                pokemon_types = ", ".join(pokemon_data['types'])
+                plain_list.append(f"{pokemon_name} - Types: {pokemon_types}")
+            else:
+                plain_list.append(f"{pokemon_name} - Types: Unknown")
 
         try:
             with open("selected_pokemons.txt", "w") as txt_file:
@@ -97,11 +64,13 @@ class PokemonPicker:
         except Exception as e:
             print(f"Error saving plain list file: {e}")
 
+
     def on_mousewheel(self, event):
         self.canvas.yview_scroll(-1 * (event.delta // 120), "units")
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
     def pick_pokemon(self, selected_pokemon_name, label):
+        # Toggle selection of the clicked Pokémon
         if selected_pokemon_name in self.selected_pokemons:
             self.selected_pokemons.remove(selected_pokemon_name)
         else:
@@ -110,16 +79,18 @@ class PokemonPicker:
         self.selected_pokemon.set(selected_pokemon_name)
         self.update_pokemon_icon(label)
 
-        # Corrected attribute name
+        # If the "Show Final Evolutions" option is enabled, select the entire evolution chain
         if self.show_final_evolutions_only:
-            evolution_chains = self.load_evolution_chains()
+            evolution_chains = self.load_final_evolutions()
             for chain_id, pokemons in evolution_chains.items():
                 if selected_pokemon_name in pokemons:
-                    # Select all Pokémons in the chain
+                    # Select all Pokémon in the chain
                     for pokemon_name in pokemons:
-                        self.selected_pokemons.append(pokemon_name)
+                        if pokemon_name not in self.selected_pokemons:
+                            self.selected_pokemons.append(pokemon_name)
                     break
 
+        # Update UI for each Pokémon label
         for label in self.pokemon_labels:
             if label["text"].lower() in self.selected_pokemons:
                 label.config(bd=3, relief="solid")
@@ -130,6 +101,7 @@ class PokemonPicker:
         details, stats = self.fetch_pokemon_details(selected_pokemon_name)
         print(f"Details fetched for {selected_pokemon_name}: {details}")  # Debug print
         self.display_pokemon_details(details, stats)
+
 
     def update_pokemon_icon(self, label):
         selected_pokemon_name = self.selected_pokemon.get().lower()
@@ -308,15 +280,14 @@ class PokemonPicker:
         try:
             with open("data/evolution_chains.json", "r") as file:
                 evolution_chains = json.load(file)
-            # Extract the last Pokémon in each evolution chain as the final evolution
-            final_evolutions = {chain_id: pokemons[-1] for chain_id, pokemons in evolution_chains.items()}
-            return final_evolutions
+            return evolution_chains
         except FileNotFoundError:
             print("Evolution chains file not found.")
             return {}
         except Exception as e:
             print(f"Error reading evolution chains file: {e}")
             return {}
+
 
 
     def toggle_view(self):
@@ -340,11 +311,8 @@ class PokemonPicker:
             label.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
 
     def toggle_final_evolutions(self):
-        # Toggle the state and update the button text accordingly
-        self.show_final_evolutions = not getattr(self, "show_final_evolutions", False)
-        button_text = (
-            "Show All" if self.show_final_evolutions else "Show Final Evolutions"
-        )
+        self.show_final_evolutions_only = not self.show_final_evolutions_only
+        button_text = "Show All" if self.show_final_evolutions_only else "Show Final Evolutions"
         self.final_evo_button.config(text=button_text)
         self.filter_pokemon_list_view()
 
@@ -365,42 +333,30 @@ class PokemonPicker:
                 label.grid_forget()
 
     def filter_pokemon_list_view(self, event=None):
-        search_query = (
-            self.search_entry.get().lower()
-            if event
-            else self.final_evolution_filter_query
-        )
+        search_query = self.search_entry.get().lower() if event else self.final_evolution_filter_query
         final_evolutions = self.load_final_evolutions()
 
         # Forget all labels to clear the canvas
         for label in self.pokemon_labels:
             label.grid_forget()
 
-        # Determine which labels to display based on the filter
-        if self.show_final_evolutions:
-            selected_labels = [
-                label
-                for label in self.pokemon_labels
-                if label["text"].lower() in final_evolutions.values()
-            ]
+        # Determine which labels to display
+        if self.show_final_evolutions_only:
+            final_evolution_names = [pokemons[-1] for pokemons in final_evolutions.values()]
+            selected_labels = [label for label in self.pokemon_labels if label["text"].lower() in final_evolution_names]
         else:
-            selected_labels = [
-                label
-                for label in self.pokemon_labels
-                if search_query in label["text"].lower()
-            ]
+            selected_labels = [label for label in self.pokemon_labels if search_query in label["text"].lower()]
 
+        # Display the selected labels
         for i, label in enumerate(selected_labels):
             col = i % 10
-            new_row = i // 10
-            label.grid(row=new_row, column=col, padx=5, pady=5, sticky="nsew")
+            row = i // 10
+            label.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
 
-        # Update the scroll region after reorganizing labels
+        # Update the scroll region
         self.canvas.update_idletasks()
         self.canvas.config(scrollregion=self.canvas.bbox("all"))
 
-        # Reset the scrollbar position to the top
-        self.canvas.yview_moveto(0)
 
     def load_evolution_chains(self):
         try:

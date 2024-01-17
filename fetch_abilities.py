@@ -28,7 +28,7 @@ def cache_abilities(abilities):
         flavor_texts = fetch_ability_details(ability)
         ability_flavor_texts[ability] = flavor_texts
 
-    with open('abilities_flavor_text.json', 'w') as file:
+    with open('data/abilities_flavor_text.json', 'w') as file:
         json.dump(ability_flavor_texts, file, indent=4)
 
 def main():
