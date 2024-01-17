@@ -9,17 +9,29 @@ def fetch_evolution_chain(chain_id):
         data = response.json()
 
         def extract_chain(chain):
-            names = [chain['species']['name']]
-            for next_chain in chain['evolves_to']:
-                names.extend(extract_chain(next_chain))
-            return names
+            if not chain:
+                return [], []
+            
+            current_species = chain['species']['name']
+            if not chain['evolves_to']:
+                return [current_species], [current_species]
 
-        full_chain = extract_chain(data['chain'])
-        return full_chain
+            full_chain = [current_species]
+            final_forms = []
+            for next_chain in chain['evolves_to']:
+                sub_finals, sub_chain = extract_chain(next_chain)
+                final_forms.extend(sub_finals)
+                full_chain.extend(sub_chain)
+            
+            return list(set(final_forms)), full_chain
+
+        final_forms, full_chain = extract_chain(data['chain'])
+        return {full_chain[0]: {"final_forms": final_forms, "full_chain": full_chain}}
 
     except Exception as e:
         print(f"Error fetching evolution chain for ID {chain_id}: {e}")
-        return None
+        return {}
+
 
 def fetch_all_evolution_chains():
     # Fetching a large number of evolution chains

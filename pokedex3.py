@@ -21,7 +21,7 @@ class PokemonPicker:
         self.selected_pokemon = tk.StringVar()
         self.show_final_evolutions_only = False
         self.final_evolution_filter_query = ""
-
+        self.final_evolutions = self.load_final_evolutions()
         # Create and style the widgets
         self.create_widgets()
         self.style_widgets()
@@ -69,26 +69,24 @@ class PokemonPicker:
         self.canvas.yview_scroll(-1 * (event.delta // 120), "units")
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
+
     def pick_pokemon(self, selected_pokemon_name, label):
-        # Toggle selection of the clicked Pokémon
-        if selected_pokemon_name in self.selected_pokemons:
+        already_selected = selected_pokemon_name in self.selected_pokemons
+        if already_selected:
             self.selected_pokemons.remove(selected_pokemon_name)
         else:
             self.selected_pokemons.append(selected_pokemon_name)
 
-        self.selected_pokemon.set(selected_pokemon_name)
-        self.update_pokemon_icon(label)
-
-        # If the "Show Final Evolutions" option is enabled, select the entire evolution chain
         if self.show_final_evolutions_only:
-            evolution_chains = self.load_final_evolutions()
-            for chain_id, pokemons in evolution_chains.items():
-                if selected_pokemon_name in pokemons:
-                    # Select all Pokémon in the chain
-                    for pokemon_name in pokemons:
-                        if pokemon_name not in self.selected_pokemons:
-                            self.selected_pokemons.append(pokemon_name)
-                    break
+            for base_form, evolution_info in self.evolution_chains.items():
+                for evolution_detail in evolution_info.values():
+                    if selected_pokemon_name in evolution_detail['full_chain']:
+                        # Select or deselect all Pokémon in the evolution chain
+                        for pokemon_name in evolution_detail['full_chain']:
+                            if already_selected and pokemon_name in self.selected_pokemons:
+                                self.selected_pokemons.remove(pokemon_name)
+                            elif not already_selected and pokemon_name not in self.selected_pokemons:
+                                self.selected_pokemons.append(pokemon_name)
 
         # Update UI for each Pokémon label
         for label in self.pokemon_labels:
@@ -102,6 +100,37 @@ class PokemonPicker:
         print(f"Details fetched for {selected_pokemon_name}: {details}")  # Debug print
         self.display_pokemon_details(details, stats)
 
+        # Update the selected count
+        self.update_selected_count()
+
+
+
+    def process_evolution_chains(self, evolution_chains):
+        final_evolutions = {}
+        for chain in evolution_chains.values():
+            for base_form, details in chain.items():
+                # Add final forms for each Pokémon in the full chain
+                for pokemon in details["full_chain"]:
+                    final_evolutions[pokemon] = details["final_forms"]
+        return final_evolutions
+
+
+
+
+    def extract_final_forms(self, chain):
+        if not chain:
+            return []
+        if isinstance(chain[0], list):
+            final_forms = []
+            for subchain in chain:
+                final_forms.extend(self.extract_final_forms(subchain))
+            return final_forms
+        return [chain[0]]  # The first element is always the current evolution
+
+
+    def update_selected_count(self):
+        count = len(self.selected_pokemons)
+        self.selected_count_label.config(text=f"Selected: {count}")
 
     def update_pokemon_icon(self, label):
         selected_pokemon_name = self.selected_pokemon.get().lower()
@@ -255,6 +284,10 @@ class PokemonPicker:
             self.pokemon_labels.append(label)
             label.grid(row=i // 10, column=i % 10, padx=5, pady=5)
 
+        # Counter label for selected Pokémons
+        self.selected_count_label = ttk.Label(top_frame, text="Selected: 0")
+        self.selected_count_label.pack(side=tk.RIGHT, padx=10, pady=5)
+
         # Update the scrollregion to encompass the inner frame
         self.canvas.update_idletasks()
         self.canvas.config(scrollregion=self.canvas.bbox("all"))
@@ -271,6 +304,8 @@ class PokemonPicker:
                 label.config(image=original_image, bd=3, relief="flat")
             else:
                 self.update_pokemon_icon(label)
+            # Update the counter
+        self.update_selected_count()
 
     def update_icons(self):
         for label in self.pokemon_labels:
@@ -279,14 +314,52 @@ class PokemonPicker:
     def load_final_evolutions(self):
         try:
             with open("data/evolution_chains.json", "r") as file:
-                evolution_chains = json.load(file)
-            return evolution_chains
+                all_chains = json.load(file)
+                final_evolutions = {}
+                for chain in all_chains.values():
+                    for base_form, data in chain.items():
+                        final_evolutions[base_form] = data['final_forms']
+                return final_evolutions
         except FileNotFoundError:
             print("Evolution chains file not found.")
             return {}
         except Exception as e:
             print(f"Error reading evolution chains file: {e}")
             return {}
+
+    def filter_pokemon_list_view(self, event=None):
+        search_query = self.search_entry.get().lower() if event else self.final_evolution_filter_query
+
+        for label in self.pokemon_labels:
+            label.grid_forget()
+
+        if self.show_final_evolutions_only:
+            final_evolution_names = {name for names in self.final_evolutions.values() for name in names}
+            selected_labels = [label for label in self.pokemon_labels if label["text"].lower() in final_evolution_names]
+        else:
+            selected_labels = [label for label in self.pokemon_labels if search_query in label["text"].lower()]
+
+        for i, label in enumerate(selected_labels):
+            col = i % 10
+            row = i // 10
+            label.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
+
+        self.canvas.update_idletasks()
+        self.canvas.config(scrollregion=self.canvas.bbox("all"))
+
+
+
+    def extract_final_evolutions(self, chain):
+        # If the chain is empty or has no further evolutions, it's a final form
+        if not chain or 'evolves_to' not in chain[-1]:
+            return [chain[-1]]
+
+        # If there's a split, recursively extract final evolutions from each branch
+        final_forms = []
+        for next_step in chain[-1]['evolves_to']:
+            final_forms.extend(self.extract_final_evolutions(chain + [next_step]))
+
+        return final_forms
 
 
 
@@ -331,43 +404,6 @@ class PokemonPicker:
         for label in self.pokemon_labels:
             if label not in selected_labels:
                 label.grid_forget()
-
-    def filter_pokemon_list_view(self, event=None):
-        search_query = self.search_entry.get().lower() if event else self.final_evolution_filter_query
-        final_evolutions = self.load_final_evolutions()
-
-        # Forget all labels to clear the canvas
-        for label in self.pokemon_labels:
-            label.grid_forget()
-
-        # Determine which labels to display
-        if self.show_final_evolutions_only:
-            final_evolution_names = [pokemons[-1] for pokemons in final_evolutions.values()]
-            selected_labels = [label for label in self.pokemon_labels if label["text"].lower() in final_evolution_names]
-        else:
-            selected_labels = [label for label in self.pokemon_labels if search_query in label["text"].lower()]
-
-        # Display the selected labels
-        for i, label in enumerate(selected_labels):
-            col = i % 10
-            row = i // 10
-            label.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
-
-        # Update the scroll region
-        self.canvas.update_idletasks()
-        self.canvas.config(scrollregion=self.canvas.bbox("all"))
-
-
-    def load_evolution_chains(self):
-        try:
-            with open("data/evolution_chains.json", "r") as f:
-                return json.load(f)
-        except FileNotFoundError:
-            print("Evolution chains file not found.")
-            return {}
-        except Exception as e:
-            print(f"Error reading evolution chains file: {e}")
-            return {}
 
     def fetch_pokemon_details(self, pokemon_name):
         # Search for the Pokémon in the cached data
@@ -428,9 +464,9 @@ class PokemonPicker:
 
         # Set up font styles
         title_font = ("Arial", 14, "bold")
-        content_font = ("Arial", 12)
+        content_font = ("Arial", 10)
         section_title_font = ("Arial", 12, "bold")
-        types_font = ("Arial", 12, "italic")
+        types_font = ("Arial", 10, "italic")
 
         # Display the text details (name, types, etc.)
         details_text = tk.Text(self.details_frame, wrap=tk.WORD, bg=self.root.cget('bg'))
@@ -462,7 +498,7 @@ class PokemonPicker:
 
     def display_pokemon_info_on_hover(self, pokemon_name):
         details, stats = self.fetch_pokemon_details(pokemon_name)
-        print(f"Details fetched for {pokemon_name}: {details}")  # Debug print for verification
+        #print(f"Details fetched for {pokemon_name}: {details}")  # Debug print for verification
         self.display_pokemon_details(details, stats)
 
     def display_stat_bars(self, stats):
