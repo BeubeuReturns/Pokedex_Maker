@@ -328,25 +328,37 @@ class PokemonPicker:
             return {}
 
     def filter_pokemon_list_view(self, event=None):
-        search_query = self.search_entry.get().lower() if event else self.final_evolution_filter_query
+        search_query = self.search_entry.get().lower()
 
+        # Reset the view
         for label in self.pokemon_labels:
             label.grid_forget()
 
         if self.show_final_evolutions_only:
-            final_evolution_names = {name for names in self.final_evolutions.values() for name in names}
-            selected_labels = [label for label in self.pokemon_labels if label["text"].lower() in final_evolution_names]
+            # Filter for final evolutions and apply search query if it exists
+            final_evo_names = {name for names in self.final_evolutions.values() for name in names}
+            if search_query:
+                filtered_labels = [label for label in self.pokemon_labels if label["text"].lower() in final_evo_names and search_query in label["text"].lower()]
+            else:
+                filtered_labels = [label for label in self.pokemon_labels if label["text"].lower() in final_evo_names]
+        elif not self.show_full_list:
+            # Filter within selected Pokémon and apply search query if it exists
+            if search_query:
+                filtered_labels = [label for label in self.pokemon_labels if label["text"].lower() in self.selected_pokemons and search_query in label["text"].lower()]
+            else:
+                filtered_labels = [label for label in self.pokemon_labels if label["text"].lower() in self.selected_pokemons]
         else:
-            selected_labels = [label for label in self.pokemon_labels if search_query in label["text"].lower()]
+            # Normal search in full list
+            filtered_labels = [label for label in self.pokemon_labels if search_query in label["text"].lower()]
 
-        for i, label in enumerate(selected_labels):
-            col = i % 10
-            row = i // 10
-            label.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
+        # Display the filtered labels
+        for i, label in enumerate(filtered_labels):
+            row, col = divmod(i, 10)
+            label.grid(row=row, column=col, padx=5, pady=5)
 
+        # Update scroll region
         self.canvas.update_idletasks()
         self.canvas.config(scrollregion=self.canvas.bbox("all"))
-
 
 
     def extract_final_evolutions(self, chain):
@@ -364,18 +376,24 @@ class PokemonPicker:
 
 
     def toggle_view(self):
-        # Toggle between full list and picked Pokémon only views
         self.show_full_list = not self.show_full_list
 
         if self.show_full_list:
-            self.show_full_list_view()
+            if self.show_final_evolutions_only:
+                # If Final Evolutions Only mode is active, show that view
+                self.filter_pokemon_list_view()
+            else:
+                # Otherwise, show the full list
+                self.show_full_list_view()
             self.toggle_view_button.config(text="Show Picked Only")
         else:
+            # Show only the picked Pokémon
             self.show_picked_pokemon_view()
             self.toggle_view_button.config(text="Show All")
 
         # Reset vertical scroll position to the top
         self.canvas.yview_moveto(0)
+
 
     def show_full_list_view(self):
         for i, label in enumerate(self.pokemon_labels):
@@ -387,23 +405,37 @@ class PokemonPicker:
         self.show_final_evolutions_only = not self.show_final_evolutions_only
         button_text = "Show All" if self.show_final_evolutions_only else "Show Final Evolutions"
         self.final_evo_button.config(text=button_text)
+
+        # Call the filter function with an empty query to initialize the view
+        self.search_entry.delete(0, tk.END)  # Clear any existing search text
         self.filter_pokemon_list_view()
 
-    def show_picked_pokemon_view(self):
-        selected_labels = [
-            label
-            for label in self.pokemon_labels
-            if label["text"].lower() in self.selected_pokemons
-        ]
 
-        for i, label in enumerate(selected_labels):
-            col = i % 10
-            row = i // 10
-            label.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
+
+    def show_picked_pokemon_view(self):
+        # Determine if we should filter by final evolutions
+        filter_final_evolutions = self.show_final_evolutions_only
+
+        # Get the list of final evolution names if needed
+        final_evolution_names = {name for names in self.final_evolutions.values() for name in names} if filter_final_evolutions else set()
+
+        selected_labels = []
+        for label in self.pokemon_labels:
+            pokemon_name = label["text"].lower()
+            if pokemon_name in self.selected_pokemons:
+                # If we are filtering by final evolutions, check if the Pokémon is a final evolution
+                if filter_final_evolutions and pokemon_name in final_evolution_names:
+                    selected_labels.append(label)
+                elif not filter_final_evolutions:
+                    selected_labels.append(label)
 
         for label in self.pokemon_labels:
-            if label not in selected_labels:
+            if label in selected_labels:
+                row, col = divmod(self.pokemon_labels.index(label), 10)
+                label.grid(row=row, column=col, padx=5, pady=5)
+            else:
                 label.grid_forget()
+
 
     def fetch_pokemon_details(self, pokemon_name):
         # Search for the Pokémon in the cached data
