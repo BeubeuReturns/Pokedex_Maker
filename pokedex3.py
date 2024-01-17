@@ -6,24 +6,30 @@ import json
 import threading
 from tkinter import messagebox
 
+
 class PokemonPicker:
     def __init__(self, root):
+        # Initialize the main window and bind the mousewheel event
         self.root = root
         self.root.title("Regional Pokédex Maker")
         root.bind("<MouseWheel>", self.on_mousewheel)
 
+        # Load data and set up initial state
         self.pokemon_data = self.fetch_pokemon_data()
         self.show_full_list = True
         self.selected_pokemons = []
         self.selected_pokemon = tk.StringVar()
+        self.show_final_evolutions_only = False
+        self.ability_flavor_texts = self.load_ability_flavor_texts()
+        self.final_evolution_filter_query = ""
 
+        # Create and style the widgets
         self.create_widgets()
         self.style_widgets()
 
-
-    def load_data_from_cache(self, filename='pokemon_data_sorted.json'):
+    def load_data_from_cache(self, filename="pokemon_data_sorted.json"):
         try:
-            with open(filename, 'r') as file:
+            with open(filename, "r") as file:
                 return json.load(file)
         except FileNotFoundError:
             print("Cache file not found, fetching data from API.")
@@ -50,13 +56,12 @@ class PokemonPicker:
             print(f"Error fetching Pokémon data: {e}")
             return []
 
-    def save_data_to_cache(self, data, filename='pokemon_cache.json'):
+    def save_data_to_cache(self, data, filename="pokemon_cache.json"):
         try:
-            with open(filename, 'w') as file:
+            with open(filename, "w") as file:
                 json.dump(data, file)
         except Exception as e:
             print(f"Error saving data to cache: {e}")
-
 
     def fetch_pokemon_types(self, pokemon_name):
         api_url = f"https://pokeapi.co/api/v2/pokemon/{pokemon_name.lower()}"
@@ -96,9 +101,46 @@ class PokemonPicker:
         self.canvas.yview_scroll(-1 * (event.delta // 120), "units")
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
+    def pick_pokemon(self, selected_pokemon_name, label):
+        if selected_pokemon_name in self.selected_pokemons:
+            self.selected_pokemons.remove(selected_pokemon_name)
+        else:
+            self.selected_pokemons.append(selected_pokemon_name)
+
+        self.selected_pokemon.set(selected_pokemon_name)
+        self.update_pokemon_icon(label)
+
+        # Corrected attribute name
+        if self.show_final_evolutions_only:
+            evolution_chains = self.load_evolution_chains()
+            for chain_id, pokemons in evolution_chains.items():
+                if selected_pokemon_name in pokemons:
+                    # Select all Pokémons in the chain
+                    for pokemon_name in pokemons:
+                        self.selected_pokemons.append(pokemon_name)
+                    break
+
+        for label in self.pokemon_labels:
+            if label["text"].lower() in self.selected_pokemons:
+                label.config(bd=3, relief="solid")
+            else:
+                label.config(bd=3, relief="flat")
+
+        # Fetch details for the selected Pokémon and display them
+        details, stats = self.fetch_pokemon_details(selected_pokemon_name)
+        print(f"Details fetched for {selected_pokemon_name}: {details}")  # Debug print
+        self.display_pokemon_details(details, stats)
+
     def update_pokemon_icon(self, label):
         selected_pokemon_name = self.selected_pokemon.get().lower()
-        index = next((i for i, pokemon in enumerate(self.pokemon_data) if pokemon["name"].lower() == selected_pokemon_name), None)
+        index = next(
+            (
+                i
+                for i, pokemon in enumerate(self.pokemon_data)
+                if pokemon["name"].lower() == selected_pokemon_name
+            ),
+            None,
+        )
 
         if index is not None:
             image_path = f"images/{index + 1}.png"
@@ -119,13 +161,15 @@ class PokemonPicker:
     def style_widgets(self):
         # Use a theme for ttk widgets that is available on your system
         style = ttk.Style()
-        style.theme_use('clam')  # Example theme, 'clam', 'alt', 'default', 'classic' can also be used
+        style.theme_use(
+            "clam"
+        )  # Example theme, 'clam', 'alt', 'default', 'classic' can also be used
 
         # Configure ttk Button style for uniformity
-        style.configure('TButton', padding=6, relief="flat", background="#ccc")
+        style.configure("TButton", padding=6, relief="flat", background="#ccc")
 
         # Configure the ttk Entry style
-        style.configure('TEntry', padding=6)
+        style.configure("TEntry", padding=6)
 
     def create_widgets(self):
         # Top frame for search and action buttons
@@ -140,16 +184,24 @@ class PokemonPicker:
         self.search_entry.pack(side=tk.LEFT, padx=10, pady=5)
 
         # Action buttons within the top frame
-        self.generate_button = ttk.Button(top_frame, text="Generate JSON", command=self.generate_json)
+        self.generate_button = ttk.Button(
+            top_frame, text="Generate JSON", command=self.generate_json
+        )
         self.generate_button.pack(side=tk.LEFT, padx=5, pady=5)
 
-        self.generate_plain_list_button = ttk.Button(top_frame, text="Generate Plain List", command=self.generate_plain_list)
+        self.generate_plain_list_button = ttk.Button(
+            top_frame, text="Generate Plain List", command=self.generate_plain_list
+        )
         self.generate_plain_list_button.pack(side=tk.LEFT, padx=5, pady=5)
 
-        self.deselect_button = ttk.Button(top_frame, text="Deselect All", command=self.deselect_all)
+        self.deselect_button = ttk.Button(
+            top_frame, text="Deselect All", command=self.deselect_all
+        )
         self.deselect_button.pack(side=tk.LEFT, padx=5, pady=5)
 
-        self.toggle_view_button = ttk.Button(top_frame, text="Show Picked Only", command=self.toggle_view)
+        self.toggle_view_button = ttk.Button(
+            top_frame, text="Show Picked Only", command=self.toggle_view
+        )
         self.toggle_view_button.pack(side=tk.LEFT, padx=5, pady=5)
 
         # Bottom frame for the Pokémon selection and details display
@@ -157,7 +209,11 @@ class PokemonPicker:
         bottom_frame.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True)
 
         # Canvas and scrollbar within the bottom frame
-        self.canvas = tk.Canvas(bottom_frame, width=120 * 10 + 20, height=100 * ((len(self.pokemon_data) - 1) // 10 + 1) + 20)
+        self.canvas = tk.Canvas(
+            bottom_frame,
+            width=120 * 10 + 20,
+            height=100 * ((len(self.pokemon_data) - 1) // 10 + 1) + 20,
+        )
         self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         scrollbar = tk.Scrollbar(bottom_frame, command=self.canvas.yview)
@@ -174,16 +230,30 @@ class PokemonPicker:
         self.details_frame.pack_propagate(False)
 
         # Details title and text widget within the details frame
-        self.details_title = tk.Label(self.details_frame, text="Pokémon Details", font=("Arial",16))
+        self.details_title = tk.Label(
+            self.details_frame, text="Pokémon Details", font=("Arial", 16)
+        )
         self.details_title.pack(pady=(5, 10))
 
-        self.details_text = tk.Text(self.details_frame, wrap=tk.WORD, font=("Arial", 12), state=tk.DISABLED)
+        self.details_text = tk.Text(
+            self.details_frame, wrap=tk.WORD, font=("Arial", 12), state=tk.DISABLED
+        )
         self.details_text.pack(fill=tk.BOTH, expand=True)
+
+        # Button to toggle final evolution view
+        self.final_evo_button = ttk.Button(
+            top_frame,
+            text="Show Final Evolutions",
+            command=self.toggle_final_evolutions,
+        )
+        self.final_evo_button.pack(side=tk.LEFT, padx=5, pady=5)
 
         # Pokémon image placeholders and labels
         self.pokemon_images = []
         self.pokemon_labels = []
-        self.placeholder_img = ImageTk.PhotoImage(Image.new("RGBA", (96, 96), (255, 255, 255, 0)))
+        self.placeholder_img = ImageTk.PhotoImage(
+            Image.new("RGBA", (96, 96), (255, 255, 255, 0))
+        )
 
         for i, pokemon in enumerate(self.pokemon_data):
             image_path = f"images/{i + 1}.png"
@@ -195,9 +265,20 @@ class PokemonPicker:
             except FileNotFoundError:
                 img = self.placeholder_img
 
-            label = tk.Label(self.frame, image=img, text=pokemon["name"].capitalize(), compound='top', bd=0)
+            label = tk.Label(
+                self.frame,
+                image=img,
+                text=pokemon["name"].capitalize(),
+                compound="top",
+                bd=0,
+            )
             label.image = img  # Keep a reference to avoid garbage collection
-            label.bind("<Button-1>", lambda event, name=pokemon["name"], label=label: self.pick_pokemon(name, label))
+            label.bind(
+                "<Button-1>",
+                lambda event, name=pokemon["name"], label=label: self.pick_pokemon(
+                    name, label
+                ),
+            )
             self.pokemon_labels.append(label)
             label.grid(row=i // 10, column=i % 10, padx=5, pady=5)
 
@@ -208,7 +289,6 @@ class PokemonPicker:
     def on_search_focus(self, event):
         if self.search_entry.get() == "Search by name":
             self.search_entry.delete(0, tk.END)
-            
 
     def deselect_all(self):
         self.selected_pokemons = []
@@ -223,25 +303,16 @@ class PokemonPicker:
         for label in self.pokemon_labels:
             self.update_pokemon_icon(label)
 
-    def pick_pokemon(self, selected_pokemon_name, label):
-        if selected_pokemon_name in self.selected_pokemons:
-            self.selected_pokemons.remove(selected_pokemon_name)
-        else:
-            self.selected_pokemons.append(selected_pokemon_name)
-
-        self.selected_pokemon.set(selected_pokemon_name)
-        self.update_pokemon_icon(label)
-
-        for label in self.pokemon_labels:
-            if label["text"].lower() in self.selected_pokemons:
-                label.config(bd=3, relief="solid")
-            else:
-                label.config(bd=3, relief="flat")
-        # Fetch details for the selected Pokémon and display them
-        details, stats = self.fetch_pokemon_details(selected_pokemon_name)
-        print(f"Details fetched for {selected_pokemon_name}: {details}")  # Debug print
-        self.display_pokemon_details(details,stats)
-        
+    def load_final_evolutions(self):
+        try:
+            with open("final_evolutions.json", "r") as file:
+                return json.load(file)
+        except FileNotFoundError:
+            print("Final evolutions file not found.")
+            return {}
+        except Exception as e:
+            print(f"Error reading final evolutions file: {e}")
+            return {}
 
     def toggle_view(self):
         # Toggle between full list and picked Pokémon only views
@@ -263,8 +334,21 @@ class PokemonPicker:
             row = i // 10
             label.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
 
+    def toggle_final_evolutions(self):
+        # Toggle the state and update the button text accordingly
+        self.show_final_evolutions = not getattr(self, "show_final_evolutions", False)
+        button_text = (
+            "Show All" if self.show_final_evolutions else "Show Final Evolutions"
+        )
+        self.final_evo_button.config(text=button_text)
+        self.filter_pokemon_list_view()
+
     def show_picked_pokemon_view(self):
-        selected_labels = [label for label in self.pokemon_labels if label["text"].lower() in self.selected_pokemons]
+        selected_labels = [
+            label
+            for label in self.pokemon_labels
+            if label["text"].lower() in self.selected_pokemons
+        ]
 
         for i, label in enumerate(selected_labels):
             col = i % 10
@@ -275,19 +359,31 @@ class PokemonPicker:
             if label not in selected_labels:
                 label.grid_forget()
 
-    def filter_pokemon_list_view(self, event):
-        search_query = self.search_entry.get().lower()
+    def filter_pokemon_list_view(self, event=None):
+        search_query = (
+            self.search_entry.get().lower()
+            if event
+            else self.final_evolution_filter_query
+        )
+        final_evolutions = self.load_final_evolutions()
 
         # Forget all labels to clear the canvas
         for label in self.pokemon_labels:
             label.grid_forget()
 
-        # Filter and create labels based on the search query
-        selected_labels = [
-            label
-            for label in self.pokemon_labels
-            if search_query in label["text"].lower()
-        ]
+        # Determine which labels to display based on the filter
+        if self.show_final_evolutions:
+            selected_labels = [
+                label
+                for label in self.pokemon_labels
+                if label["text"].lower() in final_evolutions.values()
+            ]
+        else:
+            selected_labels = [
+                label
+                for label in self.pokemon_labels
+                if search_query in label["text"].lower()
+            ]
 
         for i, label in enumerate(selected_labels):
             col = i % 10
@@ -301,60 +397,106 @@ class PokemonPicker:
         # Reset the scrollbar position to the top
         self.canvas.yview_moveto(0)
 
+    def load_evolution_chains(self):
+        try:
+            with open("evolution_chains.json", "r") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            print("Evolution chains file not found.")
+            return {}
+        except Exception as e:
+            print(f"Error reading evolution chains file: {e}")
+            return {}
 
     def fetch_pokemon_details(self, pokemon_name):
         # Search for the Pokémon in the cached data
         for pokemon in self.pokemon_data:
-            if pokemon['name'].lower() == pokemon_name.lower():
-                types = ', '.join(pokemon.get('types', []))
+            if pokemon["name"].lower() == pokemon_name.lower():
+                types = ", ".join(pokemon.get("types", []))
 
-                # Formatting abilities
-                normal_abilities = ', '.join(pokemon.get('normal_abilities', []))
-                hidden_abilities = ', '.join([ability + ' (Hidden)' for ability in pokemon.get('hidden_abilities', [])])
-                abilities = normal_abilities
-                if hidden_abilities:
-                    abilities += '\n' + hidden_abilities
+                # Formatting and fetching abilities with flavor texts
+                abilities_info = ""
+                for ability in pokemon.get("normal_abilities", []) + pokemon.get(
+                    "hidden_abilities", []
+                ):
+                    formatted_ability = self.format_ability_name(ability)
+                    flavor_text_en = self.ability_flavor_texts.get(ability, {}).get(
+                        "en", "No description available."
+                    )
+                    abilities_info += f"{formatted_ability}: {flavor_text_en}\n"
 
                 # Preparing stats
-                stats = pokemon.get('stats', {})
+                stats = pokemon.get("stats", {})
 
                 # Format the details for display
-                details = f"{pokemon_name.capitalize()}\nTypes: {types}\nAbilities: {abilities}\n"
+                details = f"{pokemon_name.capitalize()}\nTypes: {types}\nAbilities:\n{abilities_info}"
                 return details, stats
 
         return "Details not found.", {}
 
-    
     def get_stat_color(self, stat):
         # Return a color based on the stat name
         colors = {
-            'hp': 'green',
-            'attack': 'red',
-            'defense': 'orange',
-            'special-attack': 'pink',
-            'special-defense': 'blue',
-            'speed': 'cyan'
+            "hp": "green",
+            "attack": "red",
+            "defense": "orange",
+            "special-attack": "pink",
+            "special-defense": "blue",
+            "speed": "cyan",
         }
-        return colors.get(stat.lower(), 'grey')
-        # Display the stat bars
-        self.display_stat_bars(stats)
-        
+        return colors.get(stat.lower(), "grey")
 
+    def load_ability_flavor_texts(self):
+        try:
+            with open("abilities_flavor_text.json", "r") as file:
+                return json.load(file)
+        except FileNotFoundError:
+            print("Ability flavor text file not found.")
+            return {}
+        except Exception as e:
+            print(f"Error reading ability flavor text file: {e}")
+            return {}
+
+    def format_ability_name(self, ability_name):
+        return ability_name.replace("-", " ").capitalize()
 
     def display_pokemon_details(self, details, stats):
         # Clear the frame of previous details and bars
         for widget in self.details_frame.winfo_children():
             widget.destroy()
 
+        ability_flavor_texts = self.load_ability_flavor_texts()
         # Display the text details (name, types, etc.)
-        details_text = tk.Text(self.details_frame, wrap=tk.WORD, height=15, bg=self.root.cget('bg'))
+        details_text = tk.Text(
+            self.details_frame, wrap=tk.WORD, height=15, bg=self.root.cget("bg")
+        )
         details_text.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
         details_text.insert(tk.END, details)
         details_text.config(state=tk.DISABLED)  # Make the text widget read-only
 
+        # Load ability flavor texts
+        ability_flavor_texts = self.load_ability_flavor_texts()
+
+        abilities_text = tk.Text(
+            self.details_frame, wrap=tk.WORD, height=10, bg=self.root.cget("bg")
+        )
+        abilities_text.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
+
+        abilities_text.insert(tk.END, "Abilities:\n")
+        for ability in stats.get("normal_abilities", []) + stats.get(
+            "hidden_abilities", []
+        ):
+            formatted_ability = self.format_ability_name(ability)
+
+            # Fetch the English flavor text from the loaded data
+            flavor_text_en = self.ability_flavor_texts.get(ability, {}).get(
+                "en", "No description available."
+            )
+            abilities_text.insert(tk.END, f"{formatted_ability}: {flavor_text_en}\n")
+
+        abilities_text.config(state=tk.DISABLED)
         # Display the stat bars
         self.display_stat_bars(stats)
-
 
     def display_stat_bars(self, stats):
         # Clear out any existing widgets in the details_frame
@@ -364,12 +506,12 @@ class PokemonPicker:
 
         # Define abbreviations for stat names
         stat_abbreviations = {
-            'hp': 'HP',
-            'attack': 'ATK',
-            'defense': 'DEF',
-            'special-attack': 'SpATK',
-            'special-defense': 'SpDEF',
-            'speed': 'SPE'
+            "hp": "HP",
+            "attack": "ATK",
+            "defense": "DEF",
+            "special-attack": "SpATK",
+            "special-defense": "SpDEF",
+            "speed": "SPE",
         }
 
         # Calculate the total of all stats (BST)
@@ -387,10 +529,10 @@ class PokemonPicker:
             abbrev = stat_abbreviations.get(stat, stat).capitalize()
 
             # Create a label with the stat abbreviation
-            tk.Label(stat_frame, text=abbrev, width=6, anchor='w').pack(side=tk.LEFT)
+            tk.Label(stat_frame, text=abbrev, width=6, anchor="w").pack(side=tk.LEFT)
 
             # Create a label for the stat value
-            value_label = tk.Label(stat_frame, text=f"{value}", width=4, anchor='e')
+            value_label = tk.Label(stat_frame, text=f"{value}", width=4, anchor="e")
             value_label.pack(side=tk.RIGHT)
 
             # Create a canvas for the bar
@@ -400,16 +542,15 @@ class PokemonPicker:
 
             # Draw the bar on the canvas
             bar_length = (value / max_stat_value) * canvas.winfo_width()
-            canvas.create_rectangle(0, 0, bar_length, 10, fill=self.get_stat_color(stat), outline="")
+            canvas.create_rectangle(
+                0, 0, bar_length, 10, fill=self.get_stat_color(stat), outline=""
+            )
 
         # Display the Base Stat Total
         bst_frame = tk.Frame(self.details_frame)
         bst_frame.pack(fill=tk.X, padx=5, pady=5)
-        tk.Label(bst_frame, text="Total", width=6, anchor='w').pack(side=tk.LEFT)
-        tk.Label(bst_frame, text=f"{bst}", anchor='e').pack(side=tk.RIGHT)
-
-
-
+        tk.Label(bst_frame, text="Total", width=6, anchor="w").pack(side=tk.LEFT)
+        tk.Label(bst_frame, text=f"{bst}", anchor="e").pack(side=tk.RIGHT)
 
 
 if __name__ == "__main__":
