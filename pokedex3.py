@@ -27,7 +27,7 @@ class PokemonPicker:
         self.create_widgets()
         self.style_widgets()
 
-    def load_data_from_cache(self, filename="pokemon_data_sorted.json"):
+    def load_data_from_cache(self, filename="data/pokemon_data_sorted.json"):
         try:
             with open(filename, "r") as file:
                 return json.load(file)
@@ -278,6 +278,7 @@ class PokemonPicker:
                 lambda event, name=pokemon["name"], label=label: self.pick_pokemon(
                     name, label
                 ),
+            label.bind("<Enter>", lambda event, name=pokemon["name"]: self.display_pokemon_info_on_hover(name))
             )
             self.pokemon_labels.append(label)
             label.grid(row=i // 10, column=i % 10, padx=5, pady=5)
@@ -399,7 +400,7 @@ class PokemonPicker:
 
     def load_evolution_chains(self):
         try:
-            with open("evolution_chains.json", "r") as f:
+            with open("data/evolution_chains.json", "r") as f:
                 return json.load(f)
         except FileNotFoundError:
             print("Evolution chains file not found.")
@@ -429,7 +430,7 @@ class PokemonPicker:
                 stats = pokemon.get("stats", {})
 
                 # Format the details for display
-                details = f"{pokemon_name.capitalize()}\nTypes: {types}\nAbilities:\n{abilities_info}"
+                details = f"{pokemon_name.capitalize()}\nTypes: {types}\n{abilities_info}"
                 return details, stats
 
         return "Details not found.", {}
@@ -448,7 +449,7 @@ class PokemonPicker:
 
     def load_ability_flavor_texts(self):
         try:
-            with open("abilities_flavor_text.json", "r") as file:
+            with open("data/abilities_flavor_text.json", "r") as file:
                 return json.load(file)
         except FileNotFoundError:
             print("Ability flavor text file not found.")
@@ -465,38 +466,44 @@ class PokemonPicker:
         for widget in self.details_frame.winfo_children():
             widget.destroy()
 
-        ability_flavor_texts = self.load_ability_flavor_texts()
+        # Set up font styles
+        title_font = ("Arial", 14, "bold")
+        content_font = ("Arial", 12)
+        section_title_font = ("Arial", 12, "bold")
+        types_font = ("Arial", 12, "italic")
+
         # Display the text details (name, types, etc.)
-        details_text = tk.Text(
-            self.details_frame, wrap=tk.WORD, height=15, bg=self.root.cget("bg")
-        )
-        details_text.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
-        details_text.insert(tk.END, details)
+        details_text = tk.Text(self.details_frame, wrap=tk.WORD, bg=self.root.cget('bg'))
+        details_text.pack(side=tk.TOP, fill=tk.BOTH, padx=5, pady=5)
+
+        # Insert Pokémon name
+        details_text.tag_configure("name", font=title_font)
+        details_text.insert(tk.END, details.split('\n')[0] + '\n', "name")
+
+        # Insert types
+        details_text.tag_configure("types", font=types_font, foreground="blue")
+        details_text.insert(tk.END, details.split('\n')[1] + '\n\n', "types")
+
+        # Insert abilities with section title
+        details_text.tag_configure("section_title", font=section_title_font, foreground="black")
+        details_text.insert(tk.END, "Abilities:\n", "section_title")
+
+        # Insert abilities content
+        details_text.tag_configure("content", font=content_font)
+        abilities_info = details.split('\n')[2:]
+        for info in abilities_info:
+            details_text.insert(tk.END, info + '\n', "content")
+
         details_text.config(state=tk.DISABLED)  # Make the text widget read-only
 
-        # Load ability flavor texts
-        ability_flavor_texts = self.load_ability_flavor_texts()
-
-        abilities_text = tk.Text(
-            self.details_frame, wrap=tk.WORD, height=10, bg=self.root.cget("bg")
-        )
-        abilities_text.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
-
-        abilities_text.insert(tk.END, "Abilities:\n")
-        for ability in stats.get("normal_abilities", []) + stats.get(
-            "hidden_abilities", []
-        ):
-            formatted_ability = self.format_ability_name(ability)
-
-            # Fetch the English flavor text from the loaded data
-            flavor_text_en = self.ability_flavor_texts.get(ability, {}).get(
-                "en", "No description available."
-            )
-            abilities_text.insert(tk.END, f"{formatted_ability}: {flavor_text_en}\n")
-
-        abilities_text.config(state=tk.DISABLED)
         # Display the stat bars
         self.display_stat_bars(stats)
+
+
+    def display_pokemon_info_on_hover(self, pokemon_name):
+        details, stats = self.fetch_pokemon_details(pokemon_name)
+        print(f"Details fetched for {pokemon_name}: {details}")  # Debug print for verification
+        self.display_pokemon_details(details, stats)
 
     def display_stat_bars(self, stats):
         # Clear out any existing widgets in the details_frame
